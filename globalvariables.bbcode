@@ -1,0 +1,307 @@
+[b][i]Globális változók[/i][/b]
+
+Néha szükséges, hogy olyan globális változókat használjunk, melyek a kód bármely részéből könnyen előhívhatóak. [i]Android[/i] alatt arra is célszerű figyelni, hogy ezek a változók életben maradjanak a program újraindításakor, vagy legalábbis konfigurációs változások miatti újraindításakor.
+Megjegyzendő, hogy hosszútávú és biztonságos tárolásra kizárólag valamelyik háttértár alkalmas; a [url=http://developer.android.com/guide/topics/data/data-storage.html]Storage Options[/url] rész több lehetőséget is felsorol. Most azonban a célunk az, hogy az adatokat a programon belül helyezzük egy univerzális helyre.
+
+Öt különböző lehetőséget próbálunk ki:
+» [i]Application osztály[/i]-ban tárolt adatok
+» [i]Activity osztály[/i]-ban tárolt adatok, melyeket [i]onSaveInstanceState[/i] metódussal mentünk
+» [i]Activity osztály[/i]-ban tárolt adatok, melyeket az összehasonlítás kedvéért [i]SharedPreferences[/i]-ben tárolunk
+» [i]Singelton osztály[/i]-ban tárolt adatok
+» megtartott [i]Fragment[/i]-ben tárolt adatok
+
+A projekt rendkívül egyszerű. Egy-egy [i]int[/i] értéket tárolunk mind az öt helyen. Az [i]Activity[/i] indulásakor ezeket az értékeket eggyel növeljük. Mindegyik érték megjelenítéséhez egy külön [i]Fragment[/i] tartozik, mely az érték kijelzése mellett annak törlésére is képes. A képernyőn tehát megjelenik az öt különböző érték, melyek a program újraindításakor (vagyis pl. a készülék elfordításakor) - elvileg - szépen növekednek. Minden értékhez hozzáférünk mind az [i]Activity[/i]-ból, mind pedig egy független [i]Fragment[/i]-ből. Ennek alapján mind az öt megoldás globális, csak éppen a szükséges kód bonyolultsága különbözik. A konfigurációs változásokat is mindegyik érték túléli, de egyéb eseményeket (pl. kilépés és újraindítás) is megvizsgálhatunk.  
+
+[b][i]Application szintű adattárolás[/i][/b]
+A programunk egy [i]Application[/i] osztály példánya, mely egy vagy több [i]Activity[/i] példányt is tartalmaz. Amíg a programunk fut, addig az [i]Application[/i] példány is létezni fog, miközben az [i]Activity[/i]-k hol bezáródnak, hol újraindulnak. Ha a globális változóinkat az [i]Application[/i] osztályban hozzuk létre, akkor azok - a program teljes élete során - elérhetőek maradnak, és minden [i]Activity[/i] számára hozzáférhetőek.
+Első lépésben hozzunk létre egy saját [i]ApplicationWithGlobals[/i] osztályt. Ez mindenben helyettesíti az eredetit, tehát használhatjuk a programunkban. Annyival tud többet, hogy lesz benne egy globális változó, melyet [i]set…[/i], [i]get…[/i] és az inkrementálás miatt hozzáadott [i]inc…[/i] metódusokkal érhetünk el. 
+[code]
+public class ApplicationWithGlobals extends Application
+	{
+	private int applicationData = 0;
+	
+	public int getApplicationData()
+		{
+		return applicationData;
+		}
+	
+	public void setApplicationData( int data )
+		{
+		this.applicationData = data;
+		}
+
+	public void incApplicationData( )
+		{
+		this.applicationData++;
+		}
+	}
+[/code]
+Az [i]application[/i] tag alatt ezt be is kell jegyeznünk az [i]AndroidManifest.xml[/i]-ben:
+[code]
+<application
+	android:name="digitalgarden.globalvariables.ApplicationWithGlobals"
+	…>
+[/code]
+Az adatok elérése az [i]Activity.getApplication()[/i] metóduson keresztül történik. (Figyeljük meg, hogy a metódus eléréséhez a visszaadott általános [i]Application[/i] értéket módosítani kell a saját [i]ApplicationWithGlobals[/i] értékünkre!) Ez a [i]MainActivity.onCreate[/i]-ben így növeli a változó értékét: 
+[code]
+((ApplicationWithGlobals)getApplication()).incApplicationData();
+[/code]
+A [i]Fragment[/i]-ben el kell kérjük először az [i]Activity[/i]-t, sőt, ha azt nem csak az [i]Attach-Detach[/i] részek között használjuk, akkor [i]null[/i] értékét is célszerű ellenőrizni. (Ebben az esetben most nem generálunk hibát, csak egy alapértelmezett [b]0[/b] értéket adunk vissza.)
+[code]
+if ( getActivity() != null )
+	return ((ApplicationWithGlobals)( getActivity().getApplication() )).getApplicationData(); 
+…
+if ( getActivity() != null )
+	((ApplicationWithGlobals)( getActivity().getApplication() )).setApplicationData( data ); 
+[/code]
+
+[b][i]Activity szintű adattárolás - kétféle mentéssel[/i][/b]
+Az [i]Activity[/i]-n belüli adatok eléréséről már részletesen tárgyaltunk a [url=http://lattilad.org/android/?x=entry:entry130831-201323]Kommunikáció Activity-k ill. Fragment-ek között[/url] c. cikkben. A tárolásra több lehetőségünk is lehet, most ebből kettőt nézünk meg: a konfigurációs változások során történő tárolást, ill. a [i]SharedPreferences[/i]-ben történő tárolást.
+Az adatokat az [i]Activity[/i] tárolja, ill. a fenti metódusok is az [i]Activity[/i] részét fogják képezni. Konfigurációs változásoknál az adatok tárolására szolgáló rész:
+[code]
+@Override
+protected void onSaveInstanceState(Bundle outState) 
+	{
+	super.onSaveInstanceState(outState);
+	outState.putInt("DATA", this.activityData);
+	}
+[/code]
+A visszaolvasást az [i]onCreate[/i] metódusban fogjuk elvégezni. Hasonló módon az [i]onRestoreInstanceState[/i]-t is hasznáhatnánk erre, azzal a különbséggel, hogy az csak az [i]onStart[/i] lefutása után indul el, ill. [i]null[/i] értékkel nem is kell benne foglalkozzunk, mert [i]null[/i] paraméter esetén meghívásra sem kerül. 
+[code]
+protected void onCreate(Bundle savedInstanceState)
+	{
+	super.onCreate(savedInstanceState);
+	…
+	if ( savedInstanceState != null )
+		activityData = savedInstanceState.getInt( "DATA", 0 );
+	…
+	}
+[/code]
+
+Ha ellenben a [i]SharedPreferences[/i] használatát tervezzük, azt mindenképp érdemes legkésőbb az [i]onPause[/i] metódusban meghívni, mivel az életciklus elemei közül utolsóként az bizonyosan lefut:
+[code]
+@Override
+protected void onPause()
+	{
+	super.onPause();
+	
+	SharedPreferences settings = getSharedPreferences("PREFS", 0);
+	SharedPreferences.Editor editor = settings.edit();
+	editor.putInt("PREF_DATA", preferenceData);
+	editor.commit();
+	}
+[/code]
+A visszatöltés viszont kerülhet aszimmetrikusan az [i]onCreate[/i] részbe is, hiszen az adatok ettől a ponttól kezdődően már használhatóak, és el sem veszhetnek amíg ismét az [i]onPause[/i]-ig nem jutunk.
+[code]
+SharedPreferences settings = getSharedPreferences("PREFS", 0);
+preferenceData = settings.getInt("PREF_DATA", 0);
+[/code]
+
+Az adataink a [i]MainActivity[/i]-n belül természetesen könnyedén hozzáférhetőek, hiszen ahhoz tartoznak. Ha a [i]Fragment[/i]-et viszont több [i]Activity[/i]-vel szeretnénk használni, akkor nem köthetjük egyetlen [i]Activity[/i] altípushoz, hanem érdemes [i]interface[/i]-t definiálni:
+[code]
+public class FragOfActivityData extends Fragment 
+	{
+	private	 ExternalActivityDataProvider externalProvider;
+
+	public interface ExternalActivityDataProvider 
+		{
+		public int getActivityData();
+		public void setActivityData( int data );
+		public void incActivityData( );
+		}
+
+	@Override
+	public void onAttach(Activity activity)
+		{
+		super.onAttach(activity);
+		try 
+			{
+			externalProvider = (ExternalActivityDataProvider) activity;
+			} 
+		catch (ClassCastException e) 
+			{
+			throw new ClassCastException(activity.toString() + " must implement ExternalActivityDataProvider");
+			}
+		}
+	
+	@Override
+	public void onDetach()
+		{
+		super.onDetach();
+		externalProvider = null;
+		}
+	…
+	}
+[/code]
+Természetesen a [i]MainActivity[/i]-nek ezt (vagy ezeket - lévén két tárolási módról szó) az [i]interface[/i]-eket teljesíteni kell:
+[code]
+public class MainActivity extends FragmentActivity 
+	implements 
+	ExternalActivityDataProvider, 
+	ExternalPreferenceDataProvider 
+[/code]
+Az adatok elérése ([i]null[/i] értéket itt is célszerű ellenőrizni!) már meglehetősen egyszerű:
+[code]
+if ( externalProvider != null )
+	return externalProvider.getActivityData();
+…
+if ( externalProvider != null )
+	externalProvider.setActivityData( data ); 
+[/code]
+
+[b][i]Adattárolás singletonban[/i][/b]
+A [i]singleton[/i] osztályt egy statikus hívással érjük el. Ha még nem létezett példánya, akkor ez a [i]static[/i] hívás fogja létrehozni, és a példányt a [i]static[/i] osztályon belül tárolni.
+Megvalósítás szempontjából talán a legegyszerűbb ezt elkészíteni, hiszen a [i]singleton[/i] osztály mindenkitől független, bárhonnan elérhető, és csak saját magára hivatkozik. Ebben rejlik a hátránya is, ugyanis néha (és váratlanul) egyszerűen megszűnik. Természetesen a következő hívással ismét létrejön - de az adataink már elvesztek. Íme az osztály:
+[code]
+public class Singleton
+	{
+	private Singleton() {}
+	
+	private static Singleton instance;
+	
+	public static Singleton getInstance()
+		{
+		if (instance == null)
+			instance = new Singleton();
+		
+		return instance;
+		}
+	
+	private int singletonData = 0;
+	
+	public void setSingletonData( int data )
+		{
+		this.singletonData = data;
+		}
+	
+	public int getSingletonData( )
+		{
+		return this.singletonData;
+		}
+
+	public void incSingletonData( )
+		{
+		this.singletonData++;
+		}
+	}
+[/code]
+És a hivatkozások (akár [i]Activity[/i], akár [i]Fragment[/i] oldalról):
+[code]
+Singleton.getInstance().incSingletonData();
+…
+return Singleton.getInstance().getSingletonData();
+…
+Singleton.getInstance().setSingletonData( data );
+[/code]
+
+[b][i]Fragment szintű adattárolás[/i][/b]
+Annak ellenére, hogy ez a dokumentáció által ajánlott tárolási mód, ezt a legnehezebb elkészíteni és kezelni.
+A [i]Fragment[/i]-et az [i]Activity[/i]-n belül hozzuk létre. Mivel a [i]FragmentManager[/i] számára is elérhető kell legyen, magát a [i]Fragment[/i]-et nem tudjuk [i]private[/i] kulcsszó mögé rejteni, kötelezően [i]public[/i] kell legyen. Így azt a trükköt csináljuk meg, hogy a globális változót rejtjük el. Ez egyébként a külső, [i]Activity[/i] osztályból elérhető, így a problémát (és a kívülről való elérést) már az [i]Activity szintű adattárolás[/i]-ban leírtak szerint oldhatjuk meg. Figyeljünk rá, hogy a [i]setRetainInstance(true);[/i] parancsot kiadjuk, uis. ez akadályozza meg, hogy a [i]Fragment[/i]-ünk eltűnjön!
+[code]
+public class MainActivity extends FragmentActivity 
+	implements 
+	ExternalActivityDataProvider, 
+	ExternalPreferenceDataProvider, 
+	ExternalFragmentDataProvider
+	{
+	…
+	private RetainedVariables retainedVariables;
+	
+	public static class RetainedVariables extends Fragment
+		{
+		private int fragmentData = 0;
+		
+		@Override
+		public void onCreate(Bundle savedInstanceState) 
+			{
+			super.onCreate(savedInstanceState);
+			setRetainInstance(true);
+			}
+		}
+
+	public int getFragmentData()
+		{
+		if (retainedVariables != null)
+			return retainedVariables.fragmentData;
+		else
+			return 0;
+		}
+	
+	public void setFragmentData( int data )
+		{
+		if (retainedVariables != null)
+			retainedVariables.fragmentData = data;
+		}
+	
+	public void incFragmentData( )
+		{
+		if (retainedVariables != null)
+			retainedVariables.fragmentData++;
+		}
+	…
+	}
+[/code]
+Nem elég csak definiálni a [i]Fragment[/i]-et, ténylegesen létre is kell azt hoznunk! Ha már korábban létezett, akkor is csak az [i]onResumeFragments[/i] részben fog megjelenni, tehát az adataihoz is csak ezt követően férünk hozzá.
+[code]
+@Override
+protected void onResumeFragments()
+	{
+	super.onResumeFragments();
+
+	FragmentManager fragmentManager = getSupportFragmentManager();
+	FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+
+	retainedVariables = (RetainedVariables)fragmentManager.findFragmentByTag( "VAR" );
+	if ( retainedVariables == null )
+		{
+		retainedVariables = new RetainedVariables();
+		fragmentTransaction.add( retainedVariables, "VAR" );
+		}
+	…
+	fragmentTransaction.commit();
+	}
+[/code]
+Ebből először is az a probléma következik, hogy az érték növelése sem történhet az [i]onCreate[/i] metódusban, hanem legelőbb itt, az [i]onResumeFragments[/i] részben. Tehát nem az újraindításokat, hanem az előtérbe kerüléseket fogja számlálni.
+Az [i]Activity[/i] ill. az adatok elérése éppen ugyanúgy történik, mint ahogy az [i]Activity szintű adattárolás[/i]-ban leírtuk, ezt nem ismételjük meg. 
+
+Van azonban egy fontos buktató, amire ki kell térnünk! Az adatok megjelenítését a [i]FragOfFragmentData[/i] fragmentben az [i]updateValue()[/i] metódus végzi el. Ezt azonban kizárólag az [i]onActivityCreated[/i] fogja meghívni!
+Amikor először lészítjük el a [i]Fragmentünket[/i], akkor ez semmilyen gondot nem jelent. Legyártottuk a globális adatokat tartalmazó [i]RetainedFragment[/i]-et, legyártottuk a megjelenítést végző [i]FragOfFragmentData[/i] Fragmentet. Mire az életciklusuk lefut (a [i]MainActivity.onResumeFragments[/i] UTÁN), az [i]updateValue[/i] meg fogja találni a számára szükséges globális értéket.
+Ezzel szemben a következő indításkor már a [i]FragmentManager[/i] hozza létre a [i]Fragment[/i]-eket, mégpedig az [i]MainActivity.onResumeFragments[/i] futása ELŐTT! Ekkor még nem szereztük vissza a [i]retainedFragment[/i] értékét, vagyis az [i]updateValue[/i] nem találhatja meg a globális változót!
+Nekünk kell tehát gondoskodnunk az [i]updateValue()[/i] meghívásáról, mégpedig akkor, amikor már mind a két, automatikusan létrehozott/visszaszerzett [i]Fragment[/i]-et megtaláltuk - vagyis az [i]onResumeFragments[/i] végén, ha VAN már kész [i]FragOfFragmentData[/i] fragment (és nem mi hoztuk létre):
+[code]
+@Override
+protected void onResumeFragments()
+	{
+	super.onResumeFragments();
+
+	FragmentManager fragmentManager = getSupportFragmentManager();
+	FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+
+	…
+	
+	Fragment fragOfFragmentData = fragmentManager.findFragmentByTag("FRAGMENT_DATA_LEVEL");
+	if (fragOfFragmentData == null)
+		{
+		fragOfFragmentData = new FragOfFragmentData();
+		fragmentTransaction.add( R.id.main_layout, fragOfFragmentData, "FRAGMENT_DATA_LEVEL" );
+		}
+	else
+		{
+		((FragOfFragmentData)fragOfFragmentData).updateValue();
+		}
+
+	fragmentTransaction.commit();
+	}
+[/code]
+Ha ezekre az apróságokra figyelünk, akkor már könnyen hozzáférhetünk az adatainkhoz, akár ebből a másik [i]FragOfFragmentData[/i] Fragmentből is.
+
+[b][i]Megfigyelések[/i][/b]
+Indítsuk el a programot, és forgassuk szorgalmasan a készüléket! Aztán zárjuk be/indítsuk újra a programot! Az alapvető cél teljesül: adataink minden konfigurációs változásnál (elfordítás) megmaradnak és növekednek (ez volt a cél, persze). Ugyanígy megmaradnak, ha a [b]HOME[/b] billentyűvel lépünk ki, majd visszatérünk a programunkhoz.
+Ezen túlmenően azonban más érdekes megfigyeléseket tehetünk:
+1. A [i]Fragment[/i] szintű adat nem csak újrainduláskor, hanem minden előtérbe kerüléskor változik. (ezt tudtuk, hiszen nem az [i]onCreate[/i], hanem [i]onResumeFragments[/i] részben növeljük az értékét)
+2. A legellenállóbb a [i]SharedPreferences[/i]-ben tárolt adat, mely mindaddig él, amíg az ehhez tartozó file-t nem töröljük. (vagyis még az újratelepítés után is megmarad!) Ez felhívja a figyelmet arra, hogy a fontos adatokat mindenképpen a háttértárakra is mentsük el!
+3. [b]BACK[/b] billentyűvel való kilépésnél (program befejezése) az [i]Activity[/i] és a [i]Fragment[/i] adatok törlődnek. Ez is logikus, hiszen ilyenkor nem konfigurációs változások miatt áll le a program.
+4. Meglepett viszont, hogy az [i]Application[/i] milyen sokáig életben marad. Sem kilépésnél, sem más programok elindításánál (memória-hiány) nem nullázódott! Az újratelepítést természetesen nem élte túl.
+5. Még meglepőbb volt viszont a [i]Singleton[/i] viselkedése. Többnyire az előző ponthoz hasonlóan sokáig megmaradt, volt azonban olyan eset is, amikor a memória-hiány miatt eltűnt a háttérben lévő programból. 
+
+A fenti tapasztalatok alapján mindenki kiválaszthatja a neki legszimpatikusabb tárolási módot. A legfontosabb tanulság számomra mégis az volt, hogy a fontos adatokat feltétlenül a háttértárolókon és maradandó módon kell elmenteni. 
