@@ -1,0 +1,6 @@
+Android sample for storing global variables at 5 different places:
+- in the Application class
+- in the Activity class (saved during config. changes)
+- in the Activity class (stored in SharedPreferences)
+- in a Singleton
+- in a retained Fragment
